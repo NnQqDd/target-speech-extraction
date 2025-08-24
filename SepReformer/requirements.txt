@@ -1,0 +1,13 @@
+pyyaml
+tqdm
+setproctitle
+loguru
+wandb
+numpy==1.26.4
+pandas
+torch
+soundfile
+librosa
+torchaudio
+mir_eval
+

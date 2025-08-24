@@ -1,0 +1,19 @@
+SepReformer-Tiny/
+
+# Weights & Bias Logs
+wandb/
+
+# Virtual environment
+ss_venv/
+
+# Python cache
+__pycache__/
+
+# Logs, scratch files
+*.csv
+*.gradio
+*.log
+*.scp
+*.pt
+*.pth
+
