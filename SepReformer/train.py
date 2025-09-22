@@ -19,9 +19,10 @@ import torch
 import torch.distributed as dist
 from setproctitle import setproctitle
 from loguru import logger
-from wandb_helper import *
-from ddp_dataset import get_dataloaders
-from ddp_engine import Engine
+
+from modules.wandb_helper import *
+from modules.ddp_dataset import get_dataloaders
+from modules.ddp_engine import Engine
 
 
 log_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'log/loguru.log')
@@ -69,7 +70,7 @@ def main():
     parser.add_argument('-c', '--config')
     args = parser.parse_args()
     
-    process_name = f'Vi-SepReformer-{Path(args.config).stem.capitalize()} Distributed'
+    process_name = f'Vi-SepReformer-TSE Distributed'
     setproctitle(process_name)
 
     with open(args.config, "r") as f:

@@ -1,4 +1,6 @@
-SepReformer-Tiny/
+# Misc
+LibriSpeech/
+samples/
 
 # Weights & Bias Logs
 wandb/
@@ -11,9 +13,7 @@ __pycache__/
 
 # Logs, scratch files
 *.csv
-*.gradio
 *.log
-*.scp
 *.pt
 *.pth
 

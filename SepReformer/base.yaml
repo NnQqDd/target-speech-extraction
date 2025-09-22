@@ -1,6 +1,6 @@
 wandb:
     api_key: "75453b8f1fb73877e5729903eb4c5451e984fb58"
-    project: "Vi-SepReformer-Base-FT" 
+    project: "Vi-SepReformer-TSE" 
     entity: "quangduy162003-utc"
     resume: False
     log: "gradients"
@@ -8,27 +8,18 @@ wandb:
 # ------------------------------------------------------------ #
 dataset:
     dataset_size: 
-        train: 10240 # size/n_gpus > 1000
-        test: 2048
-        val: 2048
+        train: 51 # 20 # size/n_gpus > 1000
+        test: 10 #24
+        val: 10 #24
     wave_len: 32000
-    sample_rate: 16000
-
-    lowest_snr: -3.0
-    highest_snr: 6.0
+    sample_rate: 8000
     
     speech_metadata_paths: 
-        - [3, 'ViMD_metadata.csv']
-        - [3, 'PhoAudioBook_metadata.csv']
-        - [4, 'LibriSpeech_metadata.csv']
-        
-    # Duplicate path for increased probability
-    noise_metadata_paths:
-        - 'WHAM_noise_metadata.csv'
+        - [1, 'LibriSpeech_metadata.csv']
 # ------------------------------------------------------------ #
 dataloader:
     batch_size_per_gpu: 1
-    num_workers: 2
+    num_workers: 1
     # pin_memory: false
     # persistent_workers: false
 # ------------------------------------------------------------ #
@@ -129,9 +120,7 @@ scheduler:
     WarmupConstantSchedule:
         warmup_steps: 1000
 engine:
-    max_epoch: 300
-    finetune_epoch: 200
-    reset_so: [True, 1.0e-4]
+    max_epoch: 200
     gpus: 1
     mvn: false
     clip_norm: 5

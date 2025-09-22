@@ -11,7 +11,7 @@ class BaseFactory:
     def load_class(self, category: str, lib_check: Type[Any], name: str) -> Type[Any]:
         """Loading Classes from a Module"""
         try:
-            return getattr(lib_check, name) if hasattr(lib_check, name) else getattr(importlib.import_module(f"training.{category}"), name)
+            return getattr(lib_check, name) if hasattr(lib_check, name) else getattr(importlib.import_module(f".training.{category}", package=__package__), name)
         except ImportError as e:
             logger.error(f"Error importing module {category}: {e}")
             raise

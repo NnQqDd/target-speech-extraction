@@ -144,32 +144,41 @@ class PIT_SISNR_mag:
         idx = kwargs['idx']        # which STFT stage to use
         targets = [t.to(self.device) for t in kwargs["targets"]]
 
-        def _STFT_Mag_SDR_loss(eps=1.0e-10):
-            loss_per_speaker = []
-            for s in range(self.num_spks):
-                mix = estims[s]
-                src = targets[s]
+        def _freq_SDR_score(prd, tar, eps=1e-10):
+            prd_zm = prd - torch.mean(prd, dim=-1, keepdim=True)
+            tar_zm = tar - torch.mean(tar, dim=-1, keepdim=True)
+            scale = torch.sum(prd_zm * tar_zm, dim=-1, keepdim=True) / (l2norm(tar_zm, keepdim=True)**2 + eps)
+            tar_zm = torch.clamp(scale, min=1e-2) * tar_zm
 
-                mix_zm = mix - torch.mean(mix, dim=-1, keepdim=True)
-                src_zm = src - torch.mean(src, dim=-1, keepdim=True)
-                scale = torch.sum(mix_zm * src_zm, dim=-1, keepdim=True) / (l2norm(src_zm, keepdim=True)**2 + eps)
-                src_zm = torch.clamp(scale, min=1e-2) * src_zm
+            prd_spec = self.stft[idx](prd_zm.to(self.device))[0]
+            tar_spec = self.stft[idx](tar_zm.to(self.device))[0]
 
-                mix_spec = self.stft[idx](mix_zm.to(self.device))[0]
-                src_spec = self.stft[idx](src_zm.to(self.device))[0]
+            if self.mel_opt:
+                prd_spec = self.mel_fb(prd_spec)
+                tar_spec = self.mel_fb(tar_spec)
 
-                if self.mel_opt:
-                    mix_spec = self.mel_fb(mix_spec)
-                    src_spec = self.mel_fb(src_spec)
+            return 20 * torch.log10(eps + l2norm(l2norm(tar_spec)) / (l2norm(l2norm(prd_spec - tar_spec)) + eps))    
 
-                utt_loss = -20 * torch.log10(eps + l2norm(l2norm((src_spec))) / (l2norm(l2norm(mix_spec - src_spec)) + eps))
-                loss_per_speaker.append(utt_loss)
+        losses = []
+        wave_len = estims[0].shape[-1]//2
+        for s in range(self.num_spks): # self.num_spks is based on the original purpose of sepreformer
+            if s == 0:
+                prd_src = estims[s][..., :wave_len]
+                prd_ref = estims[s][..., wave_len:]
+                tar_src = targets[s][..., :wave_len]
+                tar_ref = targets[s][..., wave_len:]
+                tse_loss = -_freq_SDR_score(prd_src, tar_src)
+                ref_loss = -_freq_SDR_score(prd_ref, tar_ref)
+                losses.extend([tse_loss, ref_loss])    
 
-            per_utt_loss = sum(loss_per_speaker)
-            return per_utt_loss
-
-        per_utt_loss = _STFT_Mag_SDR_loss()
-        return torch.sum(per_utt_loss) / estims[0].shape[0]
+            else:
+                prd_int = estims[s][:wave_len]
+                tar_int = targets[s][:wave_len]
+                loss = -_freq_SDR_score(prd_int, tar_int)
+                losses.append(loss) 
+            
+        final_loss = (losses[0]*(len(losses) - 1) + sum(losses[1:]))/(2*len(losses) - 1)
+        return torch.sum(final_loss) / estims[0].shape[0]  # mean over batch
 
 
 @dataclass(slots=True)
@@ -186,7 +195,7 @@ class PIT_SISNR_time:
     def __call__(self, **kwargs):
         estims = kwargs['estims']
         targets = [t.to(self.device) for t in kwargs["targets"]]
-        finetune = kwargs.get('finetune', False)
+        is_test = kwargs.get('is_test', False)
 
         def _SDR_score(prd, tar, eps=1e-10):
             prd_zm = prd - torch.mean(input=prd, dim=-1, keepdim=True)
@@ -194,14 +203,31 @@ class PIT_SISNR_time:
             tar_zm_scale = tar_zm * torch.sum(prd_zm * tar_zm, dim=-1, keepdim=True) / (l2norm_sq(tar_zm, keepdim=True) + eps)
             A = l2norm_sq(tar_zm_scale)
             B = l2norm_sq(prd_zm - tar_zm_scale)
-            return 10 * torch.log10(eps + A / (B + eps))
+            return 10 * torch.log10(eps + A / (B + eps)) 
 
-        loss_per_speaker = []
-        for s in range(self.num_spks):
-            utt_loss = torch.clamp(-_SDR_score(estims[s], targets[s]), min=-32)  # [B]
-            loss_per_speaker.append(utt_loss)
-
-        per_utt_loss = sum(loss_per_speaker)  # [B] sum across speakers
-        return torch.sum(per_utt_loss) / estims[0].shape[0]  # mean over batch
+        losses = []
+        wave_len = estims[0].shape[-1]//2
+        for s in range(self.num_spks): # self.num_spks is based on the original purpose of sepreformer
+            if s == 0:
+                prd_src = estims[s][..., :wave_len]
+                prd_ref = estims[s][..., wave_len:]
+                tar_src = targets[s][..., :wave_len]
+                tar_ref = targets[s][..., wave_len:]
+                tse_loss = torch.clamp(-_SDR_score(prd_src, tar_src), min=-32)
+                ref_loss = torch.clamp(-_SDR_score(prd_ref, tar_ref), min=-32)
+                losses.extend([tse_loss, ref_loss])    
+            
+            elif not is_test:
+                prd_int = estims[s][..., :wave_len]
+                tar_int = targets[s][..., :wave_len]
+                loss = torch.clamp(-_SDR_score(prd_int, tar_int), min=-32)
+                losses.append(loss) 
+        
+        if is_test:
+            final_loss = losses[0]
+        else:
+            final_loss = (losses[0]*(len(losses) - 1) + sum(losses[1:]))/(2*len(losses) - 1)
+     
+        return torch.sum(final_loss) / estims[0].shape[0]  # mean over batch
 
 

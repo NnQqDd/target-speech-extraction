@@ -1,6 +1,7 @@
 import sys
 import torch
-from modules.module import *
+
+from .model_modules.module import *
 
 
 class Model(torch.nn.Module):

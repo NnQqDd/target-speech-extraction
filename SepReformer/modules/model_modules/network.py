@@ -163,7 +163,7 @@ class CLA(torch.nn.Module):
         self.GLU = torch.nn.GLU()
         self.dw_conv_1d = torch.nn.Conv1d(in_channels, in_channels, kernel_size, padding='same', groups=in_channels)
         self.linear2 = torch.nn.Linear(in_channels, 2*in_channels)        
-        self.BN = torch.nn.BatchNorm1d(2*in_channels)
+        # self.BN = torch.nn.BatchNorm1d(2*in_channels)
         self.linear3 = torch.nn.Sequential(
             torch.nn.GELU(),
             torch.nn.Linear(2*in_channels, in_channels),
@@ -178,9 +178,11 @@ class CLA(torch.nn.Module):
         y = self.dw_conv_1d(y)
         y = y.permute(0, 2, 1) # B, T, 2F
         y = self.linear2(y)
+        '''
         y = y.permute(0, 2, 1) # B, T, 2F
         y = self.BN(y)
         y = y.permute(0, 2, 1) # B, T, 2F        
+        '''
         y = self.linear3(y)
         
         return x + self.Layer_scale(y)
