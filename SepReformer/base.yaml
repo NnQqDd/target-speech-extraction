@@ -8,9 +8,9 @@ wandb:
 # ------------------------------------------------------------ #
 dataset:
     dataset_size: 
-        train: 51 # 20 # size/n_gpus > 1000
-        test: 10 #24
-        val: 10 #24
+        train: 5120 # size/n_gpus > 1000
+        test: 1024
+        val: 1024
     wave_len: 32000
     sample_rate: 8000
     
