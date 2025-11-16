@@ -1,17 +1,9 @@
-# Misc
-LibriSpeech/
-samples/
-
-# Weights & Bias Logs
 wandb/
-
-# Virtual environment
-ss_venv/
-
-# Python cache
+.venv/
 __pycache__/
+datasets/
+logs/
 
-# Logs, scratch files
 *.csv
 *.log
 *.pt

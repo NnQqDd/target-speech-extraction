@@ -1,0 +1,32 @@
+Bias size (C_out,) -> (B, C_out, T_out)
+
+CONVOLUTION 1D
+- Idea (from derivative).
+- Single channel MATMUL form.
+- (B, C_in, T_in) x (C_out, C_in, K) -> (B, C_out, T_out) | Box & Sum
+- T_out = [(T_in + 2p - k)/s + 1]
+
+
+TRANSPOSE CONVOLUTION
+- Idea (from transpose of conv's MATMUL form).
+- Single channel MATMUL form.
+- (B, C_in, L_in) x (C_in, C_out, K) -> (B, C_out, L_out) | Scatter & Sum
+- T_out = (T_in - 1)*s - 2p + k + op 
+
+
+SPECIAL CASE - 1x1 CONV
+- Idea (fully connected layer).
+- (B, C_in, T) x (C_out, C_in, 1) -> (B, C_out, T)
+
+SPECIAL - DEPTHWISE CONV
+- Idea (linear separable layers)
+- (B, C_in, T_in) x (C_out, 1, K) -> (B, C_out, T_out)
+
+HALVES
+- kernel_size = 4, stride = 2, padding = 1
+- kernel_size = 2, stride = 2, padding = 0
+
+DOUBLE
+kernel_size	stride	padding	output_padding
+4	        2	1	0
+2	        2	0	0

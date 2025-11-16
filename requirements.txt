@@ -3,9 +3,10 @@ tqdm
 setproctitle
 loguru
 wandb
-pandas
 numpy
 librosa
+pandas
 torch
+torchvision
 torchaudio
 
