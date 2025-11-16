@@ -4,8 +4,10 @@ setproctitle
 loguru
 wandb
 numpy
-librosa
 pandas
+ffmpeg-python
+soundfile
+librosa
 torch
 torchvision
 torchaudio

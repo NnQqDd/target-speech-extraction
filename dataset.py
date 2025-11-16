@@ -1,14 +1,14 @@
 from collections import defaultdict
 import csv
 import random
-import os
+import ffmpeg
 import numpy as np
 import librosa
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torchvision import io
-import torchvision.transforms.v2 as v2
-import torchaudio.functional as F
+# from torchvision import io
+# import torchvision.transforms.v2 as v2
+# import torchaudio.functional as F
 
 
 def get_speech_metadata(config):
@@ -33,64 +33,39 @@ def get_speech_metadata(config):
     return speech_metadata
 
 
-def extract_audio_and_frames(video_path: str, target_sr=16000, target_fps=16, resnet18_norm=True, array=True):
-    # Use VideoReader for streaming (memory-efficient)
-    video_reader = io.VideoReader(video_path, "video")
-    metadata = video_reader.get_metadata()
-    duration = metadata['video']['duration'][0]  # in seconds
-    original_fps = metadata['video']['fps'][0]
-    
-    # Calculate number of frames at target FPS
-    num_frames = int(duration * target_fps)
-    video_frames = []
-    
-    for i in range(num_frames):
-        # Target PTS (timestamp) for this frame
-        target_pts = i / target_fps
-        video_reader.seek(target_pts)
-        try:
-            frame = next(video_reader)['data']  # (C, H, W) uint8 tensor
-            video_frames.append(frame)
-        except StopIteration:
-            break  # In case of edge issues at end
-    
-    if video_frames:
-        video_frames = torch.stack(video_frames)  # (T, C, H, W)
-    else:
-        raise ValueError("No video frames extracted.")
-    
-    # Convert to float [0,1]
-    video_frames = video_frames.float() / 255.0
-    
-    # Apply transforms: Resize, CenterCrop, Normalize (using v2 for batched tensor support)
-    if resnet18_norm:
-        transform = v2.Compose([
-            v2.Resize(240),
-            v2.CenterCrop(224),
-            v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-        video_frames = transform(video_frames)  # (T, C, 224, 224) normalized
-    
-    # Audio handling (unchanged, but using a separate reader for audio)
-    audio_reader = io.VideoReader(video_path, "audio")
-    audio_metadata = audio_reader.get_metadata()
-    original_sr = audio_metadata['audio']['fps'][0] if 'audio' in audio_metadata else None
-    if original_sr is None:
-        raise ValueError("Audio sample rate not found in metadata.")
-    
-    # Read all audio frames
-    audio_frames = torch.cat([frame['data'] for frame in audio_reader], dim=1)  # (channels, samples)
-    
-    if original_sr != target_sr:
-        audio_waveform = F.resample(audio_frames, orig_freq=original_sr, new_freq=target_sr)
-    else:
-        audio_waveform = audio_frames
+def read_video_audio(video_path, target_fps=16, target_sr=16000):
+    """
+    Reads a video and returns:
+      - video_frames: np.array of shape (T, 3, H, W), RGB, float32 [0,1]
+      - audio_waveform: np.array of shape (num_samples,), float32, mono
+    """
+    # 1. Read audio
+    out, _ = (
+        ffmpeg.input(video_path)
+        .output('pipe:', format='f32le', acodec='pcm_f32le', ac=1, ar=target_sr)
+        .run(capture_stdout=True, capture_stderr=True)
+    )
+    audio_waveform = np.frombuffer(out, np.float32)
 
-    audio_waveform = audio_waveform.mean(dim=0)
-    
-    if not array:
-        return audio_waveform, video_frames
-    return audio_waveform.numpy(), video_frames.numpy()
+    # 2. Read video frames
+    probe = ffmpeg.probe(video_path)
+    video_info = next(stream for stream in probe['streams'] if stream['codec_type'] == 'video')
+    width = int(video_info['width'])
+    height = int(video_info['height'])
+
+    out, _ = (
+        ffmpeg.input(video_path)
+        .filter('fps', fps=target_fps)
+        .output('pipe:', format='rawvideo', pix_fmt='rgb24')
+        .run(capture_stdout=True, capture_stderr=True)
+    )
+    video_frames = (
+        np.frombuffer(out, np.uint8)
+        .reshape([-1, height, width, 3])
+        .astype(np.float32) / 255.0
+    )
+
+    return audio_waveform, video_frames.transpose(0, 3, 1, 2)
 
 
 def random_select_segment(wave, length):
@@ -158,8 +133,8 @@ class MyDataset(Dataset):
         waveforms = []
         for i in range(n_speakers - 1):
             speaker = speakers[i]
-            src_audio_path = random.choice(speech_dataset[speaker])
-            waveform, _ = librosa.load(src_audio_path, sr=self.sample_rate, mono=True)
+            audio_path = random.choice(speech_dataset[speaker])
+            waveform, _ = librosa.load(audio_path, sr=self.sample_rate, mono=True)
             
             if len(waveform) < self.wave_length:
                 pad_width = self.wave_length - len(waveform)
@@ -171,14 +146,15 @@ class MyDataset(Dataset):
             
             waveforms.append(waveform)
 
-        target_wave, video = extract_audio_and_frames(
-            src_audio_path, sample_rate=self.sample_rate, fps=self.fps
+        src_audio_path = random.choice(speech_dataset[speakers[-1]])
+        target_wave, video = read_video_audio(
+            src_audio_path, target_sr=self.sample_rate, target_fps=self.fps
         )
         
         if len(video) < self.video_length:
             video = np.pad(
                 video,
-                pad_width=((0, self.video_length - len(video), (0, 0), (0, 0), (0, 0))),
+                pad_width=((0, self.video_length - len(video)), (0, 0), (0, 0), (0, 0)),
                 mode='edge'
             )
             target_wave = target_wave[:self.wave_length]
@@ -195,12 +171,12 @@ class MyDataset(Dataset):
             )
         
         waveforms.append(target_wave)
-        do_augment = random.rand() > self.augmentation['probability']
+        do_augment = random.random() > self.augmentation['probability']
         if do_augment:
             mix_wave = np.zeros(self.wave_length, dtype=float)
             for i in range(len(waveforms)):
                 k = random.uniform(self.augmentation['volume']['lowest'], self.augmentation['volume']['highest'])
-                waveforms[i] *= waveforms[i]
+                waveforms[i] *= k
                 mix_wave += waveforms[i]
         else:
             mix_wave = np.sum(np.stack(waveforms, axis=0), axis=0)
@@ -255,8 +231,8 @@ def get_dataloaders(speech_metadatas, ds_config, dl_config):
 
     dataloaders['valid'] = DataLoader(
         datasets['valid'],
-        batch_size=dl_config['dataloader']['batch_size_per'],
-        num_workers=dl_config['dataloader']['n_workers'],
+        batch_size=dl_config['batch_size_per'],
+        num_workers=dl_config['n_workers'],
         shuffle=False,
         drop_last=True,
         persistent_workers=True,

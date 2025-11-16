@@ -12,24 +12,24 @@ def load_class(full_name: str): # or use eval to convert to class
 
 def get_recent_checkpoint(ckpt_dir):
     """
-    Returns (ckpt_path, epoch) for the newest checkpoint file matching epoch_{epoch}.pth.
+    Recursively search for the newest checkpoint matching epoch_{epoch}.pth.
+    Returns (ckpt_path, epoch). If none found, returns (None, 0).
     """
     pattern = re.compile(r'epoch_(\d+)\.pth$')
     newest_path, newest_time, newest_epoch = None, None, 0
 
-    for fname in os.listdir(ckpt_dir):
-        m = pattern.match(fname)
-        if m:
-            fpath = os.path.join(ckpt_dir, fname)
-            ctime = os.path.getctime(fpath)
-            if newest_time is None or ctime > newest_time:
-                newest_path = fpath
-                newest_time = ctime
-                newest_epoch = int(m.group(1))
+    for root, _, files in os.walk(ckpt_dir):
+        for fname in files:
+            m = pattern.match(fname)
+            if m:
+                fpath = os.path.join(root, fname)
+                ctime = os.path.getctime(fpath)
+                if newest_time is None or ctime > newest_time:
+                    newest_path = fpath
+                    newest_time = ctime
+                    newest_epoch = int(m.group(1))
 
-    if newest_path is not None:
-        return newest_path, newest_epoch
-    return None, 0
+    return newest_path, newest_epoch if newest_path else (None, 0)
 
 
 def print_num_params(model, show_per_module=False):

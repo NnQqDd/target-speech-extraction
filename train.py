@@ -1,3 +1,4 @@
+# WANDB_MODE=disabled
 import random
 random.seed(42)
 
@@ -8,7 +9,7 @@ import sys
 import os
 import json
 import argparse
-import uuid
+import datetime
 from setproctitle import setproctitle
 setproctitle("AV-TSE training")
 
@@ -18,7 +19,7 @@ logger.remove()
 logger.add(sys.stdout)
 
 import torch
-import torch.nn.functional as F
+import torchvision.transforms.v2 as v2
 import wandb
 from tqdm import tqdm
 from utilities import *
@@ -39,26 +40,38 @@ def compute_SDR_loss(preds, targets, eps=1e-10):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Example script")
-    parser.add_argument("--config", "-c", type=str, help="Checkpoint path")
-    parser.add_argument("--ckpt", "-ck", type=str, help="Config path")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", "-c", type=str, help="YAML config path")
+    parser.add_argument("--resume", action="store_true",
+                        help="Whether to resume using the newest created checkpoint or not")
     args = parser.parse_args()
 
     BASE_PATH = os.path.abspath(os.path.dirname(__file__))
     fill_path = lambda x: os.path.join(BASE_PATH, x)
 
-    run_id = str(uuid.uuid4())
-    logger.info(f'Run ID = {run_id}')
-    os.makedirs(fill_path(f'runs/{run_id}'), exist_ok=True)
-    
-    # now = f"{datetime.now().strftime('%Y-%m-%d_%H:%M:%S')}"; print(now)
     config_path = fill_path('config.yaml') if args.config is None else args.config 
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
-    with open(fill_path(f'runs/{run_id}/config.json'), 'w') as f:    
-        # print(config, file=f)
-        json.dump(config, f, indent=3)
     print(json.dumps(config, indent=3))
+    
+    wandb.login(key=config['wandb']['api_key'])
+    entity = config['wandb']['entity']
+    project = config['wandb']['project']
+
+    try:
+        n_emptied = remove_empty_runs(entity, project, least=1)
+        logger.info(f'{n_emptied} empty run(s) deleted.')
+    except Exception as e:
+        logger.info(e)
+
+    run = wandb.init(
+        project=project,
+        config=config,
+        entity=entity,
+        name=datetime.datetime.now().strftime("%m.%d.%H.%M.%S"),
+        # mode="offline"
+    ) # save to f"wandb/{run.id}"
+    os.makedirs(fill_path(f"weights/{run.id}"), exist_ok=True)
 
     logger.info("Loading speech metadata...")
     speech_metadatas = get_speech_metadata(config)
@@ -79,37 +92,53 @@ if __name__ == "__main__":
     device = torch.device("cuda")
     logger.info(f"Current device has {torch.cuda.mem_get_info(device)[0]/(1024 ** 3):.2f} GB free memory.")
 
-    model = MinimalAVTSE(config['model']).to(device)
+    ModelClass = load_class(config['model']['name'])
+    model = ModelClass(**config['model']['args']).to(device)
+    print_num_params(model)
+    assert isinstance(model, torch.nn.Module)
 
-    # Optimizer and Scheduler
     OptimizerClass = load_class(config['optimizer']['name'])
-    optimizer = OptimizerClass(model.parameters(), config['optimizer']['args'])
+    optimizer = OptimizerClass(model.parameters(), **config['optimizer']['args'])
+    assert isinstance(optimizer, torch.optim.Optimizer)
+    
     SchedulerClass = load_class(config['scheduler']['name'])
     scheduler = SchedulerClass(optimizer, **config['scheduler']['args'])
+    assert isinstance(scheduler,(
+        torch.optim.lr_scheduler._LRScheduler,
+        torch.optim.lr_scheduler.ReduceLROnPlateau,
+    ))
 
-    os.makedirs(fill_path(f'runs/{run_id}/weights'), exist_ok=True)
     curr_epoch = 0
-    if args.ckpt is not None and os.path.exists(args.ckpt):
-        pattern = re.compile(r'epoch_(\d+)\.pth$')
-        matches = pattern.findall(args.ckpt)   # returns list of all matches
-        if matches:
-            curr_epoch = int(matches[-1])      # last match
-        logger.info(f'Recovering from {args.ckpt}, epoch {curr_epoch}...')
-        state_dicts = torch.load(args.ckpt, map_location=device)
+    if args.resume:
+        ckpt_path, curr_epoch = get_recent_checkpoint('weights')
+        logger.info(f'Recovering from {ckpt_path}, epoch {curr_epoch}...')
+        state_dicts = torch.load(ckpt_path, map_location=device)
         model.load_state_dict(state_dicts['model_state_dict'])
         optimizer.load_state_dict(state_dicts['optimizer_state_dict'])
         scheduler.load_state_dict(state_dicts['scheduler_state_dict'])
 
+    v2_transform = v2.Compose([
+            v2.Resize(240),
+            v2.CenterCrop(224),
+            v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    def transform(videos):
+        B, T, C, H, W = videos.shape
+        videos = videos.reshape(B * T, C, H, W)  # merge batch & time
+        videos = v2_transform(videos)  # shape: (B*T, 3, 224, 224)
+        videos = videos.reshape(B, T, C, 224, 224)  # reshape back
+        return videos
+
     best_valid_loss = float('inf')
     for epoch in range(1, config['trainer']['n_epochs'] + 1):
-        logger.info(f'{run_id}')
         if epoch <= curr_epoch:
             continue
         model.train()
         train_loss = 0.0
         pbar = tqdm(dataloaders['train'], desc=f"Epoch {epoch} - Train")
         for idx, (mixes, videos, targets) in enumerate(pbar):
-            mixes = mixes
+            mixes, videos, targets = mixes.to(device), videos.to(device), targets.to(device)
+            videos = transform(videos)
             preds = model(mixes, videos) 
             loss = compute_SDR_loss(preds, targets)
             train_loss += loss.item()
@@ -117,7 +146,7 @@ if __name__ == "__main__":
             optimizer.step()                
             optimizer.zero_grad()
             pbar.set_postfix(loss=train_loss/(idx + 1))
-        avg_train_loss = train_loss / (idx + 1) # type: ignore
+        avg_train_loss = train_loss / (idx + 1)
 
         model.eval()
         valid_loss = 0.0
@@ -125,18 +154,25 @@ if __name__ == "__main__":
             pbar = tqdm(dataloaders['valid'], desc=f"Epoch {epoch} - Valid")
             for idx, (mixes, videos, targets) in enumerate(pbar):
                 mixes, videos, targets = mixes.to(device), videos.to(device), targets.to(device)
+                videos = transform(videos)
                 preds = model(mixes, videos)
                 loss = compute_SDR_loss(preds, targets)
                 valid_loss += loss.item()
                 pbar.set_postfix(loss=valid_loss/(idx + 1))
-        avg_valid_loss = valid_loss / (idx + 1) # type: ignore
+        avg_valid_loss = valid_loss / (idx + 1)
 
+        wandb.log({
+            "Metrics/Train Loss": avg_train_loss,
+            "Metrics/Valid Loss": avg_valid_loss,
+            "Others/Learning Rate": optimizer.param_groups[0]["lr"],
+        }, step=epoch)
+        
         scheduler.step(avg_valid_loss)
 
         if avg_valid_loss < best_valid_loss:
             logger.info(f"Epoch {epoch}: best {avg_valid_loss:.6f} (previous: {best_valid_loss:.6f}).")
             best_valid_loss = avg_valid_loss
-            torch.save({'model_state_dict': model.state_dict()}, fill_path(f'runs/{run_id}/weights/best.pth'))
+            torch.save({'model_state_dict': model.state_dict()}, fill_path(f'weights/{run.id}/best.pth'))
             logger.info(f"Saved model.")
         
         if epoch % config['trainer']['save_frequency'] == 0:
@@ -145,7 +181,7 @@ if __name__ == "__main__":
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
             }
-            torch.save(ckpt, fill_path(f'runs/{run_id}/weights/epoch_{epoch}.pth'))
-            logger.info(f"Saved checkpoint.")
+            torch.save(ckpt, fill_path(f'weights/{run.id}/epoch_{epoch}.pth'))
+            logger.info(f"Saved checkpoint in weights/{run.id}")
 
             
