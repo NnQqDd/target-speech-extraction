@@ -1,24 +1,17 @@
-# ChatGPT + Gemini wrote this file almost completely :)
 """
-vox2_to_csv.py
-
 Scan a VoxCeleb2 'dev' directory and produce a CSV with columns:
     file_path, url, speaker_id
 
 Expected directory structure (example):
     /path/to/dev/
-      id00019/
-        3WoWJ3cOHzM/
-          00121.mp4
-          ...
-        _tZL8BG4ZpM/
-          00001.mp4
-          ...
-      id00026/
+        id00019/
+            3WoWJ3cOHzM/
+                00121.mp4
+                ...
+            ...
         ...
 """
 
-from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
@@ -77,25 +70,25 @@ def build_manifest(root: Path, exts: Iterable[str], write_relative: bool = False
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Prepare VoxCeleb2 dev -> CSV manifest (file_path, url, speaker_id)")
-    ap.add_argument("--root", "-r", type=str, required=True,
+    ap.add_argument("--input", "-r", type=str, required=True,
                     help="Path to dev directory (e.g. datasets/dev/mp4)")
-    ap.add_argument("--out", "-o", type=str, required=True,
+    ap.add_argument("--output", "-o", type=str, required=True,
                     help="Output CSV path (e.g. vox2_dev.csv)")
     ap.add_argument("--relative", action="store_true",
                     help="Write file_path as relative to current working directory when possible")
+    return ap.parse_args()
 
 
 if __name__ == "__main__":
-    ROOT = 'datasets/dev/mp4'
-    OUT = 'VoxCeleb2.csv'
-    root = Path(ROOT).expanduser().resolve()
-    out_csv = Path(OUT).expanduser().resolve()
+    args = parse_args()
+    root = Path(args.input).expanduser().resolve()
+    out_csv = Path(args.output).expanduser().resolve()
 
     if not root.exists() or not root.is_dir():
         raise SystemExit(f"ERROR: root {root} does not exist or is not a directory")
 
     exts = [x.strip() if x.startswith(".") else "." + x.strip() for x in DEFAULT_EXTS if x.strip()]
-    rows = build_manifest(root, exts, write_relative=False)
+    rows = build_manifest(root, exts, write_relative=args.relative)
     
     all_speakers = list(set(row[2] for row in rows))
     random.shuffle(all_speakers)
@@ -112,7 +105,7 @@ if __name__ == "__main__":
 
     final_rows = []
     for file_path, url, speaker_id in rows:
-        partition = partition_map['speaker_id'] # Default to 'train' if speaker not found (shouldn't happen)
+        partition = partition_map[speaker_id] # Default to 'train' if speaker not found (shouldn't happen)
         final_rows.append([file_path, url, speaker_id, partition])
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)

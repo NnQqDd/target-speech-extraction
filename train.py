@@ -7,7 +7,6 @@ warnings.filterwarnings("ignore")
 
 import sys
 import os
-import json
 import argparse
 import datetime
 from setproctitle import setproctitle
@@ -41,9 +40,8 @@ def compute_SDR_loss(preds, targets, eps=1e-10):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", "-c", type=str, help="YAML config path")
-    parser.add_argument("--resume", action="store_true",
-                        help="Whether to resume using the newest created checkpoint or not")
+    parser.add_argument("--config", "-cf", type=str, help="Config path")
+    parser.add_argument("--ckpt", "-ck", type=str, help="Checkpoint path")
     args = parser.parse_args()
 
     BASE_PATH = os.path.abspath(os.path.dirname(__file__))
@@ -52,7 +50,6 @@ if __name__ == "__main__":
     config_path = fill_path('config.yaml') if args.config is None else args.config 
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
-    print(json.dumps(config, indent=3))
     
     wandb.login(key=config['wandb']['api_key'])
     entity = config['wandb']['entity']
@@ -70,8 +67,11 @@ if __name__ == "__main__":
         entity=entity,
         name=datetime.datetime.now().strftime("%m.%d.%H.%M.%S"),
         # mode="offline"
-    ) # save to f"wandb/{run.id}"
+    )
     os.makedirs(fill_path(f"weights/{run.id}"), exist_ok=True)
+    with open(fill_path(f'weights/{run.id}/config.yaml'), 'w') as f:  
+        yaml.dump(config, f, default_flow_style=False)  
+        # json.dump(config, f, indent=3)
 
     logger.info("Loading speech metadata...")
     speech_metadatas = get_speech_metadata(config)
@@ -94,7 +94,11 @@ if __name__ == "__main__":
 
     ModelClass = load_class(config['model']['name'])
     model = ModelClass(**config['model']['args']).to(device)
-    print_num_params(model)
+    n_params = sum(p.numel() for p in model.parameters())
+    n_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Total params:     {n_params:,}")
+    logger.info(f"Trainable params: {n_trainable_params:,}")
+
     assert isinstance(model, torch.nn.Module)
 
     OptimizerClass = load_class(config['optimizer']['name'])
@@ -109,14 +113,17 @@ if __name__ == "__main__":
     ))
 
     curr_epoch = 0
-    if args.resume:
-        ckpt_path, curr_epoch = get_recent_checkpoint('weights')
-        logger.info(f'Recovering from {ckpt_path}, epoch {curr_epoch}...')
-        state_dicts = torch.load(ckpt_path, map_location=device)
+    if args.ckpt is not None and os.path.exists(args.ckpt):
+        pattern = re.compile(r'epoch_(\d+)\.pth$')
+        matches = pattern.findall(args.ckpt)   # returns list of all matches
+        if matches:
+            curr_epoch = int(matches[-1])      # last match
+        logger.info(f'Recovering from {args.ckpt}, epoch {curr_epoch}...')
+        state_dicts = torch.load(args.ckpt, map_location=device)
         model.load_state_dict(state_dicts['model_state_dict'])
         optimizer.load_state_dict(state_dicts['optimizer_state_dict'])
         scheduler.load_state_dict(state_dicts['scheduler_state_dict'])
-
+    
     v2_transform = v2.Compose([
             v2.Resize(240),
             v2.CenterCrop(224),
