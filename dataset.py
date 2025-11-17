@@ -11,8 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 # import torchaudio.functional as F
 
 
-def get_speech_metadata(config):
-    metadata_path = config['dataset']['speech_metadata_path']
+def get_speech_metadata(metadata_path):
     speech_metadata = defaultdict(lambda: defaultdict(list))
 
     with open(metadata_path, "r", newline="", encoding="utf-8") as f:
@@ -196,26 +195,26 @@ def collate(batch):
     return mixes, videos, targets
 
 
-def get_dataloaders(speech_metadatas, ds_config, dl_config):
+def get_dataloaders(speech_metadatas, gen_config, dl_config):
     datasets = dict()
     datasets['train'] = MyDataset(
         speech_metadatas['train'], 
-        dataset_size=ds_config['size']['train'], 
-        wave_length=ds_config['wave_length'], 
-        sample_rate=ds_config['sample_rate'],
-        fps = ds_config['fps'],
-        n_spks_probs=ds_config['n_spks_probs'],
-        augmentation=ds_config['augmentation']
+        dataset_size=gen_config['size']['train'], 
+        wave_length=gen_config['wave_length'], 
+        sample_rate=gen_config['sample_rate'],
+        fps = gen_config['fps'],
+        n_spks_probs=gen_config['n_spks_probs'],
+        augmentation=gen_config['augmentation']
     )
 
     datasets['valid'] = MyDataset(
         speech_metadatas['valid'], 
-        dataset_size=ds_config['size']['valid'], 
-        wave_length=ds_config['wave_length'], 
-        sample_rate=ds_config['sample_rate'],
-        fps = ds_config['fps'],
-        n_spks_probs=ds_config['n_spks_probs'],
-        augmentation=ds_config['augmentation']
+        dataset_size=gen_config['size']['valid'], 
+        wave_length=gen_config['wave_length'], 
+        sample_rate=gen_config['sample_rate'],
+        fps = gen_config['fps'],
+        n_spks_probs=gen_config['n_spks_probs'],
+        augmentation=gen_config['augmentation']
     )
 
     dataloaders = dict()

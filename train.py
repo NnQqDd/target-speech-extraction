@@ -74,10 +74,10 @@ if __name__ == "__main__":
         # json.dump(config, f, indent=3)
 
     logger.info("Loading speech metadata...")
-    speech_metadatas = get_speech_metadata(config)
+    speech_metadatas = get_speech_metadata(config['generator']['speech_metadata_path'])
 
     logger.info("Preparing datasets and dataloaders...")
-    dataloaders = get_dataloaders(speech_metadatas, config['dataset'], config['dataloader'])
+    dataloaders = get_dataloaders(speech_metadatas, config['generator'], config['dataloader'])
     
     '''
     device = None

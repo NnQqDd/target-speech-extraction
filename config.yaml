@@ -4,7 +4,7 @@ wandb:
     entity: "quangduy-NEU"
 
 
-dataset:
+generator:
   speech_metadata_path: "VoxCeleb2.csv"
   size:
     train: 16 # 16384

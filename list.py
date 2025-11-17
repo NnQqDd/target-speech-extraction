@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import argparse
 import re
 import sys
@@ -55,8 +56,9 @@ def list_latest_checkpoints(root: Path) -> Iterable[Path]:
 
 
 if __name__ == "__main__":
-    print("List latest epoch_*.pth file in each directory")
-    root = Path('weights')
+    BASE_PATH = os.path.abspath(os.path.dirname(__file__))
+    fill_path = lambda x: os.path.join(BASE_PATH, x)
+    root = Path(fill_path('weights'))
     if root.exists():
         any_printed = False
         for chk in list_latest_checkpoints(root):
