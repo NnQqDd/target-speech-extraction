@@ -25,4 +25,4 @@ COPY . /app
 
 ENV EXISTENCE=1
 
-CMD ["python", "train.py"]
+CMD ["/bin/bash"]
