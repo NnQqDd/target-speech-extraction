@@ -7,12 +7,12 @@ wandb:
 generator:
   speech_metadata_path: "VoxCeleb2.csv"
   size:
-    train: 16 # 16384
-    valid: 2 # 1024
+    train: 16384
+    valid: 1024
   wave_length: 64000
   sample_rate: 16000
   fps: 16
-  n_spks_probs: [0.0, 0.1, 0.9] # [0.0, 0.1, 0.8, 0.1]
+  n_spks_probs: [0.0, 0.1, 0.8, 0.1]
   augmentation:
     probability: 0.0
     volume:
