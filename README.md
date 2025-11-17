@@ -10,7 +10,7 @@ This repository implements **Target Speech Extraction (TSE)** using the [SepRefo
 
 ---
 
-## 1. Virtual Environment
+## 1. Use Virtual Environment
 
 **Create and activate the environment:**
 
@@ -34,7 +34,7 @@ deactivate
 
 ---
 
-## 2. Docker Setup
+## 2. Use Docker Container
 
 **Build the Docker image:**
 
@@ -42,7 +42,7 @@ deactivate
 docker build -t avtse:latest .
 ```
 
-**Run container with GPU access:**
+**Run container with GPU access in terminal**
 
 ```bash
 docker run -it --gpus all --name avtse avtse:latest
