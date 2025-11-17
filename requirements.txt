@@ -9,6 +9,7 @@ ffmpeg-python
 soundfile
 librosa
 torch
+torchcodec
 torchvision
 torchaudio
 
