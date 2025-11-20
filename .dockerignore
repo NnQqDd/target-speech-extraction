@@ -1,8 +1,9 @@
+__pycache__/
+.venv/
+.git/
+datasets/
 wandb/
 weights/
-.venv/
-__pycache__/
-datasets/
 logs/
 
 *.csv
